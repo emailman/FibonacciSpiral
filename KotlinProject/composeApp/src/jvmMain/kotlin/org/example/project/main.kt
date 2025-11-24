@@ -3,7 +3,10 @@ package org.example.project
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.material.*
+import androidx.compose.material.Card
+import androidx.compose.material.MaterialTheme
+import androidx.compose.material.Slider
+import androidx.compose.material.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -12,7 +15,6 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
@@ -179,7 +181,7 @@ fun App() {
                     Text("Control Squares", style = MaterialTheme.typography.h6)
                     Spacer(Modifier.height(16.dp))
 
-                    Text("Squares = ${squareCount}")
+                    Text("Squares = $squareCount")
                     Slider(
                         value = squareCount.toFloat(),
                         onValueChange = { squareCount = it.toInt() },
@@ -197,7 +199,7 @@ fun SpiralCanvas(squares: List<FibonacciSquare>) {
     Canvas(modifier = Modifier.fillMaxSize().padding(32.dp)) {
         if (squares.isEmpty()) return@Canvas
 
-        // 1. Calculate Bounds
+        // 1. Calculate Bounds (Same as before)
         val minX = squares.minOf { it.rect.left }
         val minY = squares.minOf { it.rect.top }
         val maxX = squares.maxOf { it.rect.right }
@@ -206,97 +208,84 @@ fun SpiralCanvas(squares: List<FibonacciSquare>) {
         val geoWidth = maxX - minX
         val geoHeight = maxY - minY
 
-        // 2. Scale
+        // 2. Scale (Same as before)
         val scaleX = (size.width * 0.9f) / geoWidth
         val scaleY = (size.height * 0.9f) / geoHeight
         val scaleFactor = min(scaleX, scaleY)
 
+        // 3. Centers (Same as before)
         val geoCenterX = minX + geoWidth / 2
         val geoCenterY = minY + geoHeight / 2
         val screenCenterX = size.width / 2
         val screenCenterY = size.height / 2
 
-        withTransform({
-            translate(screenCenterX, screenCenterY)
-            scale(scaleFactor, scaleFactor)
-            translate(-geoCenterX, -geoCenterY)
-        }) {
-            squares.forEach { sq ->
-                // Draw Square
-                drawRect(
-                    color = sq.color,
-                    topLeft = Offset(sq.rect.left, sq.rect.top),
-                    size = Size(sq.rect.width, sq.rect.height),
-                    style = Stroke(width = 2f / scaleFactor)
-                )
+        // Helper function to map "World" coordinates to "Screen" pixels
+        fun toScreen(x: Float, y: Float): Offset {
+            val sx = screenCenterX + (x - geoCenterX) * scaleFactor
+            val sy = screenCenterY + (y - geoCenterY) * scaleFactor
+            return Offset(sx, sy)
+        }
 
-                // --- Corrected Arc Logic for Perfect Continuity ---
-                // For a smooth outward spiral, every arc must sweep -90 degrees (Counter-Clockwise).
-                // We just need to move the Pivot to the correct corner to support this motion.
+        // 4. Draw Loop (Manual Scaling)
+        squares.forEach { sq ->
+            // Calculate screen positions manually
+            val topLeft = toScreen(sq.rect.left, sq.rect.top)
+            val screenSize = sq.rect.width * scaleFactor
 
-                var pivot: Offset
-                var startAngle: Float
-                val sweepAngle = -90f // Constant CCW motion ensures no "cusps"
+            // Draw Square
+            // We can now use a constant stroke width (e.g., 2f) because we are drawing in Screen Pixels.
+            drawRect(
+                color = sq.color,
+                topLeft = topLeft,
+                size = Size(screenSize, screenSize),
+                style = Stroke(width = 2f)
+            )
 
-                when (sq.direction) {
-                    SpiralDirection.START -> {
-                        // Square 0 (Seed)
-                        // Connects to UP. End tangent must be Vertical (Up).
-                        // Pivot: Top-Left
-                        // Path: Bottom-Left (90) -> Top-Right (0)
-                        pivot = Offset(sq.rect.left, sq.rect.top)
-                        startAngle = 90f
-                    }
-                    SpiralDirection.UP -> {
-                        // Square 1 (UP)
-                        // Connects to LEFT. End tangent must be Horizontal (Left).
-                        // Pivot: Bottom-Left
-                        // Path: Bottom-Right (0) -> Top-Left (-90/270)
-                        pivot = Offset(sq.rect.left, sq.rect.bottom)
-                        startAngle = 0f
-                    }
-                    SpiralDirection.LEFT -> {
-                        // Square 2 (LEFT)
-                        // Connects to DOWN. End tangent must be Vertical (Down).
-                        // Pivot: Bottom-Right
-                        // Path: Top-Right (270) -> Bottom-Left (180)
-                        pivot = Offset(sq.rect.right, sq.rect.bottom)
-                        startAngle = 270f
-                    }
-                    SpiralDirection.DOWN -> {
-                        // Square 3 (DOWN)
-                        // Connects to RIGHT. End tangent must be Horizontal (Right).
-                        // Pivot: Top-Right
-                        // Path: Top-Left (180) -> Bottom-Right (90)
-                        pivot = Offset(sq.rect.right, sq.rect.top)
-                        startAngle = 180f
-                    }
-                    SpiralDirection.RIGHT -> {
-                        // Square 4 (RIGHT)
-                        // Connects to UP. End tangent must be Vertical (Up).
-                        // Pivot: Top-Left
-                        // Path: Bottom-Left (90) -> Top-Right (0)
-                        pivot = Offset(sq.rect.left, sq.rect.top)
-                        startAngle = 90f
-                    }
+            // --- Arc Logic ---
+            var rawPivot: Offset
+            var startAngle: Float
+            val sweepAngle = -90f
+
+            when (sq.direction) {
+                SpiralDirection.START -> {
+                    rawPivot = Offset(sq.rect.left, sq.rect.top)
+                    startAngle = 90f
                 }
-
-                val radius = sq.rect.width
-
-                // Draw the arc
-                drawArc(
-                    color = Color.Black,
-                    topLeft = Offset(pivot.x - radius, pivot.y - radius),
-                    size = Size(radius * 2, radius * 2),
-                    startAngle = startAngle,
-                    sweepAngle = sweepAngle,
-                    useCenter = false,
-                    style = Stroke(
-                        width = 3f / scaleFactor,
-                        cap = StrokeCap.Round // Smooths the joints visually
-                    )
-                )
+                SpiralDirection.UP -> {
+                    rawPivot = Offset(sq.rect.left, sq.rect.bottom)
+                    startAngle = 0f
+                }
+                SpiralDirection.LEFT -> {
+                    rawPivot = Offset(sq.rect.right, sq.rect.bottom)
+                    startAngle = 270f
+                }
+                SpiralDirection.DOWN -> {
+                    rawPivot = Offset(sq.rect.right, sq.rect.top)
+                    startAngle = 180f
+                }
+                SpiralDirection.RIGHT -> {
+                    rawPivot = Offset(sq.rect.left, sq.rect.top)
+                    startAngle = 90f
+                }
             }
+
+            // Transform the pivot to screen coordinates
+            val screenPivot = toScreen(rawPivot.x, rawPivot.y)
+            val screenRadius = sq.rect.width * scaleFactor
+
+            // Draw the arc
+            drawArc(
+                color = Color.Black,
+                topLeft = Offset(screenPivot.x - screenRadius, screenPivot.y - screenRadius),
+                size = Size(screenRadius * 2, screenRadius * 2),
+                startAngle = startAngle,
+                sweepAngle = sweepAngle,
+                useCenter = false,
+                style = Stroke(
+                    width = 3f, // Constant 3 px width
+                    cap = StrokeCap.Round
+                )
+            )
         }
     }
 }
